@@ -236,6 +236,7 @@ export function createTreeMesh(tree) {
 const DRAPE_HEIGHT = 0.08; // how far above/below an LED to look for supporting foliage
 const DRAPE_ARC = 0.12; // how far sideways
 const DRAPE_SMOOTH = 3; // LEDs on each side averaged so the strip doesn't zigzag
+const RESPACE_PASSES = 8;
 
 // Pulls each LED in from the ideal cone onto the actual foliage surface around it, like a
 // strip draped over real branches. LEDs rest at the mid-length of the outermost needle sprays;
@@ -258,8 +259,8 @@ export function drapeStripsOnFoliage(tree, foliage) {
         else hi = mid;
       }
       for (let i = lo; i < anchors.length && anchors[i].y <= y + DRAPE_HEIGHT; i++) {
-        let da = Math.abs(anchors[i].a - led.angle);
-        if (da > Math.PI) da = 2 * Math.PI - da;
+        const delta = anchors[i].a - led.angle;
+        const da = Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta))); // wrapped to [0, π]
         if (da * r0 < DRAPE_ARC && anchors[i].r > best) best = anchors[i].r;
       }
       return best > 0 ? best : r0 * 0.85;
@@ -274,9 +275,8 @@ export function drapeStripsOnFoliage(tree, foliage) {
       const r = Math.max(0.05, sum / n + offset);
       led.pos.x = r * Math.cos(led.angle);
       led.pos.z = r * Math.sin(led.angle);
-      led.world.x = led.pos.x + tree.position[0];
-      led.world.z = led.pos.z + tree.position[2];
     });
+    respaceEvenly(strip, tree);
 
     strip.lengthMeters = strip.leds.reduce((len, led, i) => {
       if (i === 0) return 0;
@@ -284,6 +284,48 @@ export function drapeStripsOnFoliage(tree, foliage) {
       return len + Math.hypot(led.pos.x - p.x, led.pos.y - p.y, led.pos.z - p.z);
     }, 0);
   });
+}
+
+// Draping changes each LED's radius, which breaks the equal spacing of a physical strip.
+// Resample the draped path by arc length, interpolating in cylindrical coordinates (height,
+// unwrapped angle, radius) so the curve keeps its shape. A few passes converge closely.
+function respaceEvenly(strip, tree) {
+  const leds = strip.leds;
+  const n = leds.length;
+  if (n < 3) return;
+
+  for (let pass = 0; pass < RESPACE_PASSES; pass++) {
+    const pts = leds.map((l) => ({ y: l.pos.y, r: Math.hypot(l.pos.x, l.pos.z), a: l.angle }));
+    for (let i = 1; i < n; i++) {
+      while (pts[i].a - pts[i - 1].a > Math.PI) pts[i].a -= 2 * Math.PI;
+      while (pts[i].a - pts[i - 1].a < -Math.PI) pts[i].a += 2 * Math.PI;
+    }
+    const cum = [0];
+    for (let i = 1; i < n; i++) {
+      const p = pts[i - 1], c = pts[i];
+      const dx = c.r * Math.cos(c.a) - p.r * Math.cos(p.a);
+      const dz = c.r * Math.sin(c.a) - p.r * Math.sin(p.a);
+      cum.push(cum[i - 1] + Math.hypot(dx, c.y - p.y, dz));
+    }
+
+    const length = cum[n - 1];
+    let k = 0;
+    leds.forEach((led, i) => {
+      const s = (length * i) / (n - 1);
+      while (k < n - 2 && cum[k + 1] < s) k++;
+      const f = (s - cum[k]) / (cum[k + 1] - cum[k] || 1);
+      const lerp = (key) => pts[k][key] + (pts[k + 1][key] - pts[k][key]) * f;
+      const y = lerp('y'), r = lerp('r'), a = lerp('a');
+      led.pos.x = r * Math.cos(a);
+      led.pos.y = y;
+      led.pos.z = r * Math.sin(a);
+      led.angle = ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      led.h = y / tree.height;
+      led.world.x = led.pos.x + tree.position[0];
+      led.world.y = led.pos.y + tree.position[1];
+      led.world.z = led.pos.z + tree.position[2];
+    });
+  }
 }
 
 // For each needle spray, remember its nearest LEDs and how strongly each one lights it.

@@ -47,7 +47,6 @@ async function main() {
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType('local-floor');
   document.body.appendChild(renderer.domElement);
-  document.body.appendChild(VRButton.createButton(renderer));
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.05, 200);
@@ -220,6 +219,9 @@ async function main() {
     controls.update();
     onResize();
   });
+
+  // Only offer VR once the session handlers above exist; entering earlier would skip them.
+  document.body.appendChild(VRButton.createButton(renderer));
 
   function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;

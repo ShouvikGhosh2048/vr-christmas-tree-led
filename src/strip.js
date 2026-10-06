@@ -39,7 +39,8 @@ export function generateStripPoints(tree, strip) {
     const z = dense[k * 3 + 2] + (dense[k * 3 + 5] - dense[k * 3 + 2]) * f;
     let angle = Math.atan2(z, x);
     if (angle < 0) angle += 2 * Math.PI;
-    points.push({ x, y, z, u, angle });
+    const winding = startAngle + (2 * Math.PI * turns * (k + f)) / SAMPLES; // continuous, not mod 2π
+    points.push({ x, y, z, u, angle, winding });
   }
   return { points, length };
 }

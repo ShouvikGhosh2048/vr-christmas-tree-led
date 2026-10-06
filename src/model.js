@@ -81,6 +81,7 @@ export function buildModel(config) {
           u: p.u,
           h: p.y / tree.height,
           angle: p.angle,
+          _winding: p.winding, // continuous angle along the strip (internal; effects use angle)
           pos: { x: p.x, y: p.y, z: p.z },
           world: { x: p.x + tree.position[0], y: p.y + tree.position[1], z: p.z + tree.position[2] },
         });

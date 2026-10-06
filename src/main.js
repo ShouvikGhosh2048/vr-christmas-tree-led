@@ -123,8 +123,13 @@ async function main() {
       const i = list.indexOf(this.runner()?.id);
       this.setEffect(list[(i + d + list.length) % list.length]);
     },
+    // Parameters belong to an effect, so with "All trees" only trees running the displayed
+    // effect change; another effect's same-named parameter may have a different range.
     setParam(key, value) {
-      for (const i of this.targets()) effects.setParam(i, key, value);
+      const id = this.runner()?.id;
+      for (const i of this.targets()) {
+        if (effects.runners[i]?.id === id) effects.setParam(i, key, value);
+      }
     },
     leafGlow: loadSetting('leafGlow', true), // LEDs lighting up the needles around them
     setLeafGlow(on) {

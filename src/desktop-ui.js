@@ -42,6 +42,8 @@ export function createDesktopUI(root, app) {
     }
   });
 
+  const paramControls = new Map(); // key -> { input, value } for the current effect's sliders
+
   function rebuild() {
     el.target.innerHTML = [
       `<option value="all">All trees</option>`,
@@ -56,6 +58,7 @@ export function createDesktopUI(root, app) {
     if (runner) el.effect.value = runner.id;
 
     el.params.innerHTML = '';
+    paramControls.clear();
     for (const [key, spec] of Object.entries(runner?.def.params ?? {})) {
       const label = document.createElement('label');
       label.innerHTML = `<span>${spec.label ?? key} <b></b></span><input type="range">`;
@@ -68,6 +71,7 @@ export function createDesktopUI(root, app) {
         value.textContent = input.value;
       });
       el.params.append(label);
+      paramControls.set(key, { input, value });
     }
 
     const errors = [...effects.loadErrors];
@@ -80,6 +84,12 @@ export function createDesktopUI(root, app) {
     el.brightness.value = effects.brightness;
     el.brightnessValue.textContent = `${Math.round(effects.brightness * 100)}%`;
     el.leafGlow.checked = app.leafGlow;
+    const runner = app.runner();
+    for (const [key, { input, value }] of paramControls) {
+      if (!runner || !(key in runner.params)) continue;
+      input.value = runner.params[key];
+      value.textContent = runner.params[key];
+    }
   }
 
   effects.addEventListener('change', rebuild);

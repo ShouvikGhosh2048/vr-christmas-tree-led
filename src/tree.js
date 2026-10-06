@@ -290,18 +290,16 @@ export function drapeStripsOnFoliage(tree, foliage) {
 
 // Draping changes each LED's radius, which breaks the equal spacing of a physical strip.
 // Resample the draped path by arc length, interpolating in cylindrical coordinates (height,
-// unwrapped angle, radius) so the curve keeps its shape. A few passes converge closely.
+// winding angle, radius) so the curve keeps its shape. A few passes converge closely.
 function respaceEvenly(strip, tree) {
   const leds = strip.leds;
   const n = leds.length;
   if (n < 3) return;
 
   for (let pass = 0; pass < RESPACE_PASSES; pass++) {
-    const pts = leds.map((l) => ({ y: l.pos.y, r: Math.hypot(l.pos.x, l.pos.z), a: l.angle }));
-    for (let i = 1; i < n; i++) {
-      while (pts[i].a - pts[i - 1].a > Math.PI) pts[i].a -= 2 * Math.PI;
-      while (pts[i].a - pts[i - 1].a < -Math.PI) pts[i].a += 2 * Math.PI;
-    }
+    // Use the continuous winding angle: with sparse strips neighbours can be more than π
+    // apart, so the wrapped angle alone can't tell which way round a step went.
+    const pts = leds.map((l) => ({ y: l.pos.y, r: Math.hypot(l.pos.x, l.pos.z), a: l._winding }));
     const cum = [0];
     for (let i = 1; i < n; i++) {
       const p = pts[i - 1], c = pts[i];
@@ -321,6 +319,7 @@ function respaceEvenly(strip, tree) {
       led.pos.x = r * Math.cos(a);
       led.pos.y = y;
       led.pos.z = r * Math.sin(a);
+      led._winding = a;
       led.angle = ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
       led.h = y / tree.height;
       led.world.x = led.pos.x + tree.position[0];

@@ -275,6 +275,8 @@ export function drapeStripsOnFoliage(tree, foliage) {
       const r = Math.max(0.05, sum / n + offset);
       led.pos.x = r * Math.cos(led.angle);
       led.pos.z = r * Math.sin(led.angle);
+      led.world.x = led.pos.x + tree.position[0];
+      led.world.z = led.pos.z + tree.position[2];
     });
     respaceEvenly(strip, tree);
 

@@ -4,6 +4,8 @@ import { createLabel } from './label.js';
 const W = 512;
 const H = 640;
 const ROW_H = 52;
+const ROWS_TOP = 80;
+const VISIBLE_ROWS = Math.floor((H - ROWS_TOP - 96) / ROW_H); // leave room for error + footer
 
 // Menu attached above the left controller. Y toggles it; while open, the left stick
 // selects a row (up/down) and changes its value (left/right).
@@ -11,6 +13,7 @@ export class VRPanel {
   constructor(app) {
     this.app = app;
     this.selected = 0;
+    this.scroll = 0; // first visible row
     this.fps = 0;
 
     this.canvas = document.createElement('canvas');
@@ -71,10 +74,7 @@ export class VRPanel {
       rows.push({
         label: spec.label ?? key,
         value: formatValue(runner.params[key]),
-        change: (d) => {
-          const v = Math.min(spec.max, Math.max(spec.min, runner.params[key] + d * step));
-          app.setParam(key, Math.round(v / step) * step);
-        },
+        change: (d) => app.setParam(key, stepValue(runner.params[key], d, spec, step)),
       });
     }
     return rows;
@@ -119,8 +119,21 @@ export class VRPanel {
     g.fillText(`${Math.round(this.fps)} fps`, W - 28, 40);
     g.textAlign = 'left';
 
-    rows.forEach((row, i) => {
-      const y = 80 + i * ROW_H;
+    // Scroll so the selected row is always visible.
+    if (this.selected < this.scroll) this.scroll = this.selected;
+    if (this.selected >= this.scroll + VISIBLE_ROWS) this.scroll = this.selected - VISIBLE_ROWS + 1;
+    this.scroll = Math.max(0, Math.min(this.scroll, rows.length - VISIBLE_ROWS));
+
+    g.fillStyle = '#8890a8';
+    g.font = '22px system-ui, sans-serif';
+    g.textAlign = 'center';
+    if (this.scroll > 0) g.fillText('▲', W / 2, ROWS_TOP - 8);
+    if (this.scroll + VISIBLE_ROWS < rows.length) g.fillText('▼', W / 2, ROWS_TOP + VISIBLE_ROWS * ROW_H + 8);
+    g.textAlign = 'left';
+
+    rows.slice(this.scroll, this.scroll + VISIBLE_ROWS).forEach((row, j) => {
+      const i = this.scroll + j;
+      const y = ROWS_TOP + j * ROW_H;
       if (i === this.selected) {
         g.fillStyle = 'rgba(80, 110, 200, 0.45)';
         g.beginPath();
@@ -146,6 +159,13 @@ export class VRPanel {
     g.fillText('Stick: select / change   A/B: next/prev effect', 28, H - 32);
     this.texture.needsUpdate = true;
   }
+}
+
+// One step up/down on the grid min, min + step, min + 2·step, ..., clamped to [min, max].
+function stepValue(value, d, spec, step) {
+  const index = Math.round((value - spec.min) / step) + d;
+  const v = Math.min(spec.max, Math.max(spec.min, spec.min + index * step));
+  return Number(v.toFixed(10)); // drop float noise like 0.30000000000000004
 }
 
 function formatValue(v) {

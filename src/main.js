@@ -11,6 +11,7 @@ import {
 } from './tree.js';
 import { LedView, averageColor, createWire } from './leds.js';
 import { EffectManager } from './effects.js';
+import { FlashGuard } from './flash-guard.js';
 import { createEnvironment } from './environment.js';
 import { createLabel } from './label.js';
 import { Locomotion } from './locomotion.js';
@@ -79,6 +80,8 @@ async function main() {
   });
 
   const ledView = new LedView(model.leds);
+  // Everything drawn reads the flash-limited copy of the effect pixels.
+  const guard = new FlashGuard(model.pixels, model.leds);
   scene.add(ledView.object);
 
   // --- Effects -------------------------------------------------------------------------------
@@ -247,11 +250,12 @@ async function main() {
     const time = clock.elapsedTime;
 
     effects.update(time, dt);
-    ledView.update(model.pixels, effects.brightness);
+    guard.update(dt);
+    ledView.update(guard.shown, effects.brightness);
 
     for (const view of treeViews) {
-      averageColor(view.tree.pixels, view.avg).multiplyScalar(effects.brightness);
-      if (app.leafGlow) updateFoliageGlow(view.foliage, model.pixels, effects.brightness);
+      averageColor(guard.view(view.tree.pixels), view.avg).multiplyScalar(effects.brightness);
+      if (app.leafGlow) updateFoliageGlow(view.foliage, guard.shown, effects.brightness);
       const lum = view.avg.r * 0.3 + view.avg.g * 0.55 + view.avg.b * 0.15;
       const c = view.light.color.copy(view.avg).multiplyScalar(1 / Math.max(lum, 1e-3));
       c.setRGB(Math.min(c.r, 1), Math.min(c.g, 1), Math.min(c.b, 1));

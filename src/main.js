@@ -8,10 +8,11 @@ import {
   bindFoliageToLeds,
   updateFoliageGlow,
   clearFoliageGlow,
+  foliageGlowGain,
 } from './tree.js';
 import { LedView, averageColor, createWire } from './leds.js';
 import { EffectManager } from './effects.js';
-import { FlashGuard } from './flash-guard.js';
+import { FlashGuard, TREE_LIGHT_GAIN } from './flash-guard.js';
 import { createEnvironment } from './environment.js';
 import { createLabel } from './label.js';
 import { Locomotion } from './locomotion.js';
@@ -81,7 +82,8 @@ async function main() {
 
   const ledView = new LedView(model.leds);
   // Everything drawn reads the flash-limited copy of the effect pixels.
-  const guard = new FlashGuard(model.pixels, model.leds);
+  const glowGain = Math.max(...treeViews.map((view) => foliageGlowGain(view.foliage)));
+  const guard = new FlashGuard(model.pixels, model.leds, glowGain);
   scene.add(ledView.object);
 
   // --- Effects -------------------------------------------------------------------------------
@@ -256,10 +258,11 @@ async function main() {
     for (const view of treeViews) {
       averageColor(guard.view(view.tree.pixels), view.avg).multiplyScalar(effects.brightness);
       if (app.leafGlow) updateFoliageGlow(view.foliage, guard.shown, effects.brightness);
-      const lum = view.avg.r * 0.3 + view.avg.g * 0.55 + view.avg.b * 0.15;
-      const c = view.light.color.copy(view.avg).multiplyScalar(1 / Math.max(lum, 1e-3));
-      c.setRGB(Math.min(c.r, 1), Math.min(c.g, 1), Math.min(c.b, 1));
-      view.light.intensity = lum * 4;
+      // The light emits exactly TREE_LIGHT_GAIN × the average color (color scaled to a max
+      // channel of 1, intensity carrying the rest), so the flash guard's tree check bounds it.
+      const peak = Math.max(view.avg.r, view.avg.g, view.avg.b, 1e-6);
+      view.light.color.copy(view.avg).multiplyScalar(1 / peak);
+      view.light.intensity = peak * TREE_LIGHT_GAIN;
     }
 
     env.update(dt);

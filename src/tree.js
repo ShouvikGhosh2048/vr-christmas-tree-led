@@ -16,6 +16,20 @@ const FROND_WIDTH = 0.17;
 const GLOW_RADIUS = 0.4; // how far an LED's light reaches into the needles
 const GLOW_LEDS = 4; // nearest LEDs that light each needle spray
 const QUAD_ROLLS = [0, 1.15]; // each spray is two crossed quads, for volume from any angle
+const NEEDLE_GREENS = ['#1d4a28', '#24562f', '#2d6236', '#356d3c', '#3f7a45', '#4a8a4c'];
+// Per-spray tint range (see createTreeMesh): channel multiplier at most these, times shade ≤ 1.
+const NEEDLE_TINT_MAX = [1.15 * 1.1, 1.15, 1.15 * 1.05];
+// LED glow on needles is ledGlow × (needle color × GLOW_TINT + GLOW_BASE).
+const GLOW_TINT = 6;
+const GLOW_BASE = 0.12;
+// The most a needle can amplify the glow it receives, in any channel: brightest texture
+// color × brightest tint, through the formula above. Bounds leaf glow for the flash guard.
+const NEEDLE_GLOW_GAIN = Math.max(
+  ...[0, 1, 2].map((c) => {
+    const max = Math.max(...NEEDLE_GREENS.map((hex) => new THREE.Color(hex).toArray()[c]));
+    return max * NEEDLE_TINT_MAX[c] * GLOW_TINT + GLOW_BASE;
+  }),
+);
 
 const UP = new THREE.Vector3(0, 1, 0);
 const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x3a2716 });
@@ -42,7 +56,6 @@ function getFrondTexture() {
   canvas.height = 256;
   const g = canvas.getContext('2d');
   const rand = mulberry32(42);
-  const greens = ['#1d4a28', '#24562f', '#2d6236', '#356d3c', '#3f7a45', '#4a8a4c'];
   g.lineCap = 'round';
 
   const needles = 80;
@@ -52,7 +65,7 @@ function getFrondTexture() {
     const len = 54 * (1 - 0.6 * t) * (0.8 + rand() * 0.35);
     for (const side of [-1, 1]) {
       const a = 0.9 + (rand() - 0.5) * 0.35; // angle from the stem
-      g.strokeStyle = greens[Math.floor(rand() * greens.length)];
+      g.strokeStyle = NEEDLE_GREENS[Math.floor(rand() * NEEDLE_GREENS.length)];
       g.lineWidth = 2.2 + rand() * 1.2;
       g.beginPath();
       g.moveTo(64, y);
@@ -90,7 +103,8 @@ function createFrondMaterial() {
       .replace('#include <common>', '#include <common>\nvarying vec3 vLedGlow;')
       .replace(
         '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLedGlow * (diffuseColor.rgb * 6.0 + 0.12);',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLedGlow * ' +
+          `(diffuseColor.rgb * ${GLOW_TINT.toFixed(1)} + ${GLOW_BASE});`,
       );
   };
   material.customProgramCacheKey = () => 'led-frond';
@@ -354,6 +368,19 @@ export function bindFoliageToLeds(foliage, leds) {
   });
   foliage.ledIndex = index;
   foliage.ledWeight = weight;
+}
+
+// The most this tree's leaf glow amplifies an LED's linear value: the largest total weight a
+// spray gives its LEDs, times NEEDLE_GLOW_GAIN. The flash guard measures glow at least this
+// strictly, so flashes on the needles are covered too.
+export function foliageGlowGain(foliage) {
+  let most = 0;
+  for (let f = 0; f < foliage.anchors.length; f++) {
+    let sum = 0;
+    for (let k = 0; k < GLOW_LEDS; k++) sum += foliage.ledWeight[f * GLOW_LEDS + k];
+    most = Math.max(most, sum);
+  }
+  return most * NEEDLE_GLOW_GAIN;
 }
 
 export function clearFoliageGlow(foliage) {

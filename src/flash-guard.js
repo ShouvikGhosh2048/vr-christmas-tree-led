@@ -9,10 +9,10 @@ import { GLOW_GAIN, LUT, bulbColor } from './leds.js';
 // pair of opposite changes of 10% or more in relative luminance, or of 20/320 in linear
 // R − G − B (the "red flash" measure, which also catches red ↔ green swaps at equal
 // luminance). Both are measured on what's drawn: the bulb (via the same bulbColor the renderer
-// uses) and the glow's peak (GLOW_GAIN × the LED's linear value, uncapped so changes between
-// bright values still count; leaf glow and tree lights are no brighter). That's four measures
-// per LED, each tracked separately. Measured at full brightness; the brightness control is
-// applied after this.
+// uses) and the glow, as the LED's linear value × the largest gain any glow applies to it (the
+// halo's peak, or leaf glow on the brightest needles), uncapped so changes between bright
+// values still count. That's four measures per LED, each tracked separately. Measured at full
+// brightness; the brightness control is applied after this.
 //
 // The rule is applied to each LED and to the average of each REGION_BANDS-th of each tree's
 // height and of each whole tree, so plain block flashing (a tree, a band, top vs bottom) is
@@ -32,16 +32,22 @@ const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP]; // glow luma, glow red
 const M = STEPS.length;
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
-// Region averages are scaled up by this before checking. Many LEDs light the same spots: their
-// glows overlap and add up on screen, and each tree's point light shines at 4× the tree's
-// average linear luminance (main.js), so a small change shared by a whole region can look
-// bigger than any one LED's measures suggest. 4 covers the tree light and a few overlapping
-// glows; denser overlap (a whole tree seen from far away) can still add up to more.
-const REGION_GAIN = 4;
+// A small change shared by a whole region can look bigger than any one LED's measures suggest:
+// halos are additive, so overlapping ones add up, and each tree's point light emits
+// TREE_LIGHT_GAIN × the tree's average linear color (main.js). So a region's glow measures use
+// the largest of: HALO_OVERLAP halos' worth of halo peak, the leaf glow gain, and the tree
+// light. Denser halo overlap (a tree seen from far away) can still add up to more. Bulbs are
+// opaque and don't add up, so their region measures are plain averages.
+const HALO_OVERLAP = 4;
+export const TREE_LIGHT_GAIN = 4;
 
 export class FlashGuard {
-  // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex).
-  constructor(pixels, leds) {
+  // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex);
+  // `glowGain` the most any glow amplifies an LED's linear value (at least the halo's peak).
+  constructor(pixels, leds, glowGain = GLOW_GAIN) {
+    this.glowGain = Math.max(GLOW_GAIN, glowGain);
+    const regionGlowGain = Math.max(this.glowGain, HALO_OVERLAP * GLOW_GAIN, TREE_LIGHT_GAIN);
+    this.regionScale = [regionGlowGain / this.glowGain, regionGlowGain / this.glowGain, 1, 1];
     const count = pixels.length / 3;
     this.target = pixels;
     this.count = count;
@@ -142,8 +148,8 @@ export class FlashGuard {
     const i = led * 3, o = led * M, bulb = this.bulb;
     const r = LUT[pixels[i]], g = LUT[pixels[i + 1]], b = LUT[pixels[i + 2]];
     bulbColor(r, g, b, bulb, 0);
-    out[o] = GLOW_GAIN * luminance(r, g, b);
-    out[o + 1] = GLOW_GAIN * redness(r, g, b);
+    out[o] = this.glowGain * luminance(r, g, b);
+    out[o + 1] = this.glowGain * redness(r, g, b);
     out[o + 2] = luminance(bulb[0], bulb[1], bulb[2]);
     out[o + 3] = redness(bulb[0], bulb[1], bulb[2]);
   }
@@ -174,7 +180,9 @@ export class FlashGuard {
 
   // Region u's average measures (from the last _sum), in this.avg.
   _regionAvg(u) {
-    for (let k = 0; k < M; k++) this.avg[k] = (this.sums[u * M + k] / this.size[u]) * REGION_GAIN;
+    for (let k = 0; k < M; k++) {
+      this.avg[k] = (this.sums[u * M + k] / this.size[u]) * this.regionScale[k];
+    }
     return this.avg;
   }
 }

@@ -164,8 +164,9 @@ red ↔ green swaps count too).
 
 The limit applies to every LED, to each quarter of each tree's height and to each whole tree,
 so plain block flashing (a whole tree, a band, top vs bottom) is caught, and one tree can't
-hide another's flashing. Region checks are 4× stricter than per-LED ones, because many LEDs'
-glows overlap and add up, and each tree's light follows its average. Each LED and region may
+hide another's flashing. Glow is measured for the brightest it can look (leaf glow on the
+brightest needles), and region checks allow for 4 halos overlapping and for each tree's light,
+which follows its average. Each LED and region may
 flash at most once every 1/3 s: a change that would flash it again sooner is held back, and
 the LED (or the whole region) keeps its color until it's allowed. A single quick sparkle
 passes, but an effect that strobes too fast is slowed to 3 evenly spaced flashes a second, so

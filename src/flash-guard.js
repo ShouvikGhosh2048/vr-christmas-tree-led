@@ -8,17 +8,23 @@ import { GLOW_GAIN, LUT, bulbColor } from './leds.js';
 // Modelled on WCAG 2.3's flash rules: no more than 3 flashes in any second, a flash being a
 // pair of opposite changes of 10% or more in relative luminance, or of 20/320 in linear
 // R − G − B (the "red flash" measure, which also catches red ↔ green swaps at equal
-// luminance). Both are measured on what's drawn: the bulb (via the same bulbColor the renderer
-// uses) and the glow, as the LED's linear value × the largest gain any glow applies to it (the
-// halo's peak, or leaf glow on the brightest needles), uncapped so changes between bright
-// values still count. That's four measures per LED, each tracked separately. Measured at full
+// luminance). Both are measured on what's drawn, for each way an LED is drawn:
+// - the bulb, via the same bulbColor the renderer uses;
+// - the halo's peak, GLOW_GAIN × the LED's linear color;
+// - leaf glow on the brightest needles: the needles' per-channel response × the LED's linear
+//   color, × the most weight any needle spray gives its LEDs.
+// Glow values are uncapped, so changes between bright values still count. Measured at full
 // brightness; the brightness control is applied after this.
 //
-// The rule is applied to each LED and to the average of each REGION_BANDS-th of each tree's
-// height and of each whole tree, so plain block flashing (a tree, a band, top vs bottom) is
-// caught too. A region's average only counts its own LEDs, so changes elsewhere can't cancel
-// it out. It isn't watertight: a pattern that balances one part of a region against another,
-// with groups taking turns, can still flash a large area.
+// The rule is applied to each LED and to each REGION_BANDS-th of each tree's height and each
+// whole tree, so plain block flashing (a tree, a band, top vs bottom) is caught too. A region's
+// measures only count its own LEDs, so changes elsewhere can't cancel them out. Halos are
+// additive and each tree's point light emits TREE_LIGHT_GAIN × the tree's average linear color
+// (main.js), so a region's glow is measured on its average color, × the larger of
+// HALO_OVERLAP halos' worth of halo peak and the tree light. Denser halo overlap (a tree seen
+// from far away) can add up to more. Bulbs are opaque, so their region measures are plain
+// averages. It isn't watertight: a pattern that balances one part of a region against
+// another, with groups taking turns, can still flash a large area.
 //
 // For each unit and measure, a reversal must be at least 1/MAX_FLASHES s after the one before
 // last, i.e. the last change in the same direction. That spaces flashes out evenly and implies
@@ -28,31 +34,26 @@ import { GLOW_GAIN, LUT, bulbColor } from './leds.js';
 // so effects that stay under the limit look exactly as written.
 const LUMA_STEP = 0.1;
 const RED_STEP = 20 / 320;
-const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP]; // glow luma, glow red, bulb luma, red
-const M = STEPS.length;
+// Tracked measures: halo luminance and redness, bulb ditto, leaf glow ditto.
+const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP];
+const T = STEPS.length;
+const M = T + 3; // per LED: the tracked measures, then its linear RGB (for region averages)
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
-// A small change shared by a whole region can look bigger than any one LED's measures suggest:
-// halos are additive, so overlapping ones add up, and each tree's point light emits
-// TREE_LIGHT_GAIN × the tree's average linear color (main.js). So a region's glow measures use
-// the largest of: HALO_OVERLAP halos' worth of halo peak, the leaf glow gain, and the tree
-// light. Denser halo overlap (a tree seen from far away) can still add up to more. Bulbs are
-// opaque and don't add up, so their region measures are plain averages.
 const HALO_OVERLAP = 4;
-export const TREE_LIGHT_GAIN = 4;
+export const TREE_LIGHT_GAIN = 1.2;
+const REGION_GLOW_GAIN = Math.max(HALO_OVERLAP * GLOW_GAIN, TREE_LIGHT_GAIN);
 
 export class FlashGuard {
   // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex);
-  // `glowGain` the most any glow amplifies an LED's linear value (at least the halo's peak).
-  constructor(pixels, leds, glowGain = GLOW_GAIN) {
-    this.glowGain = Math.max(GLOW_GAIN, glowGain);
-    const regionGlowGain = Math.max(this.glowGain, HALO_OVERLAP * GLOW_GAIN, TREE_LIGHT_GAIN);
-    this.regionScale = [regionGlowGain / this.glowGain, regionGlowGain / this.glowGain, 1, 1];
+  // `leafGlow` the most leaf glow can show an LED: { response: [r, g, b], weight }.
+  constructor(pixels, leds, leafGlow) {
     const count = pixels.length / 3;
     this.target = pixels;
     this.count = count;
     this.time = 0;
     this.started = false; // whether a frame has been shown yet
+    this.leafResponse = leafGlow.response.map((v) => v * leafGlow.weight);
     // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
     // `state` and `next` the measures of the shown and candidate colours (M per LED).
     this.shown = new Uint8ClampedArray(pixels.length);
@@ -76,7 +77,7 @@ export class FlashGuard {
     this.size = new Float32Array(units); // LEDs per region unit
     for (const level of this.levels) for (let i = 0; i < count; i++) this.size[level[i]]++;
     this.sums = new Float32Array(units * M);
-    this.avg = new Float32Array(M);
+    this.region = new Float32Array(T);
     this.held = new Uint8Array(units);
     this.trackers = STEPS.map((step) => new Tracker(units, step));
   }
@@ -100,7 +101,7 @@ export class FlashGuard {
       if (hold) for (let k = 0; k < M; k++) next[led * M + k] = state[led * M + k];
     }
 
-    // Regions, finest first: hold every LED of a region whose candidate average would be a
+    // Regions, finest first: hold every LED of a region whose candidate measures would be a
     // reversal it has no allowance for. Holding is all-or-nothing, so what's shown is always
     // either the candidate or the previous frame, and tracking it below stays within the limit.
     for (const level of levels) {
@@ -109,7 +110,7 @@ export class FlashGuard {
       for (let i = 0; i < count; i++) {
         const u = level[i];
         if (held[u]) continue;
-        held[u] = this._blocked(u, this._regionAvg(u), 0) ? 2 : 1;
+        held[u] = this._blocked(u, this._regionMeasures(u), 0) ? 2 : 1;
       }
       for (let led = 0; led < count; led++) {
         if (held[level[led]] !== 2) continue;
@@ -138,37 +139,42 @@ export class FlashGuard {
         const u = level[i];
         if (held[u]) continue;
         held[u] = 1;
-        this[track](u, this._regionAvg(u), 0);
+        this[track](u, this._regionMeasures(u), 0);
       }
     }
   }
 
-  // The M measures of an LED's colour in `pixels`, written to out[led * M ...].
+  // An LED's measures for its colour in `pixels`, written to out[led * M ...].
   _measure(pixels, led, out) {
-    const i = led * 3, o = led * M, bulb = this.bulb;
+    const i = led * 3, o = led * M, bulb = this.bulb, leaf = this.leafResponse;
     const r = LUT[pixels[i]], g = LUT[pixels[i + 1]], b = LUT[pixels[i + 2]];
     bulbColor(r, g, b, bulb, 0);
-    out[o] = this.glowGain * luminance(r, g, b);
-    out[o + 1] = this.glowGain * redness(r, g, b);
+    out[o] = GLOW_GAIN * luminance(r, g, b);
+    out[o + 1] = GLOW_GAIN * redness(r, g, b);
     out[o + 2] = luminance(bulb[0], bulb[1], bulb[2]);
     out[o + 3] = redness(bulb[0], bulb[1], bulb[2]);
+    out[o + 4] = luminance(r * leaf[0], g * leaf[1], b * leaf[2]);
+    out[o + 5] = redness(r * leaf[0], g * leaf[1], b * leaf[2]);
+    out[o + 6] = r;
+    out[o + 7] = g;
+    out[o + 8] = b;
   }
 
-  // Whether moving unit u to the measures in v[o..o+M) would reverse one too soon.
+  // Whether moving unit u to the measures in v[o..o+T) would reverse one too soon.
   _blocked(u, v, o) {
-    for (let k = 0; k < M; k++) if (this.trackers[k].blocked(u, v[o + k], this.time)) return true;
+    for (let k = 0; k < T; k++) if (this.trackers[k].blocked(u, v[o + k], this.time)) return true;
     return false;
   }
 
   _track(u, v, o) {
-    for (let k = 0; k < M; k++) this.trackers[k].track(u, v[o + k], this.time);
+    for (let k = 0; k < T; k++) this.trackers[k].track(u, v[o + k], this.time);
   }
 
   _seed(u, v, o) {
-    for (let k = 0; k < M; k++) this.trackers[k].extreme[u] = v[o + k];
+    for (let k = 0; k < T; k++) this.trackers[k].extreme[u] = v[o + k];
   }
 
-  // Per-region sums of each measure over a frame's per-LED measures, for one level.
+  // Per-region sums of each per-LED value over a frame, for one level.
   _sum(frame, level) {
     const { sums, count } = this;
     for (let i = 0; i < count; i++) sums.fill(0, level[i] * M, level[i] * M + M);
@@ -178,12 +184,15 @@ export class FlashGuard {
     }
   }
 
-  // Region u's average measures (from the last _sum), in this.avg.
-  _regionAvg(u) {
-    for (let k = 0; k < M; k++) {
-      this.avg[k] = (this.sums[u * M + k] / this.size[u]) * this.regionScale[k];
-    }
-    return this.avg;
+  // Region u's measures (from the last _sum): glow from its average linear colour, the rest
+  // as averages of the LEDs' measures.
+  _regionMeasures(u) {
+    const { sums, region } = this, s = u * M, n = this.size[u];
+    const r = sums[s + 6] / n, g = sums[s + 7] / n, b = sums[s + 8] / n;
+    region[0] = REGION_GLOW_GAIN * luminance(r, g, b);
+    region[1] = REGION_GLOW_GAIN * redness(r, g, b);
+    for (let k = 2; k < T; k++) region[k] = sums[s + k] / n;
+    return region;
   }
 }
 

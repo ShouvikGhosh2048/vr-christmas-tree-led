@@ -22,14 +22,13 @@ const NEEDLE_TINT_MAX = [1.15 * 1.1, 1.15, 1.15 * 1.05];
 // LED glow on needles is ledGlow × (needle color × GLOW_TINT + GLOW_BASE).
 const GLOW_TINT = 6;
 const GLOW_BASE = 0.12;
-// The most a needle can amplify the glow it receives, in any channel: brightest texture
-// color × brightest tint, through the formula above. Bounds leaf glow for the flash guard.
-const NEEDLE_GLOW_GAIN = Math.max(
-  ...[0, 1, 2].map((c) => {
-    const max = Math.max(...NEEDLE_GREENS.map((hex) => new THREE.Color(hex).toArray()[c]));
-    return max * NEEDLE_TINT_MAX[c] * GLOW_TINT + GLOW_BASE;
-  }),
-);
+// The most a needle amplifies the glow it receives, per channel: brightest texture color ×
+// brightest tint, through the formula above. (The brightest texture green is brightest in all
+// three channels.) Bounds leaf glow for the flash guard.
+const NEEDLE_GLOW_RESPONSE = [0, 1, 2].map((c) => {
+  const max = Math.max(...NEEDLE_GREENS.map((hex) => new THREE.Color(hex).toArray()[c]));
+  return max * NEEDLE_TINT_MAX[c] * GLOW_TINT + GLOW_BASE;
+});
 
 const UP = new THREE.Vector3(0, 1, 0);
 const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x3a2716 });
@@ -370,17 +369,16 @@ export function bindFoliageToLeds(foliage, leds) {
   foliage.ledWeight = weight;
 }
 
-// The most this tree's leaf glow amplifies an LED's linear value: the largest total weight a
-// spray gives its LEDs, times NEEDLE_GLOW_GAIN. The flash guard measures glow at least this
-// strictly, so flashes on the needles are covered too.
-export function foliageGlowGain(foliage) {
-  let most = 0;
+// How strongly this tree's leaf glow can show an LED, for the flash guard: per-channel needle
+// response (`response`) and the largest total weight any spray gives its LEDs (`weight`).
+export function foliageGlowBound(foliage) {
+  let weight = 0;
   for (let f = 0; f < foliage.anchors.length; f++) {
     let sum = 0;
     for (let k = 0; k < GLOW_LEDS; k++) sum += foliage.ledWeight[f * GLOW_LEDS + k];
-    most = Math.max(most, sum);
+    weight = Math.max(weight, sum);
   }
-  return most * NEEDLE_GLOW_GAIN;
+  return { response: NEEDLE_GLOW_RESPONSE, weight };
 }
 
 export function clearFoliageGlow(foliage) {

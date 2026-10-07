@@ -8,16 +8,19 @@ import {
   bindFoliageToLeds,
   updateFoliageGlow,
   clearFoliageGlow,
-  foliageGlowGain,
+  foliageGlowBound,
 } from './tree.js';
 import { LedView, averageColor, createWire } from './leds.js';
 import { EffectManager } from './effects.js';
 import { FlashGuard, TREE_LIGHT_GAIN } from './flash-guard.js';
+
 import { createEnvironment } from './environment.js';
 import { createLabel } from './label.js';
 import { Locomotion } from './locomotion.js';
 import { VRPanel } from './vrpanel.js';
 import { createDesktopUI } from './desktop-ui.js';
+
+const TREE_LIGHT_RANGE = 3.5; // meters; each tree's light fades out by this distance
 
 // Per-viewer preferences remembered in this browser (may be unavailable, e.g. private mode).
 function loadSetting(key, fallback) {
@@ -70,7 +73,9 @@ async function main() {
     scene.add(group);
     for (const strip of tree.strips) scene.add(createWire(strip));
 
-    const light = new THREE.PointLight(0xffffff, 0, 5, 2);
+    // No distance falloff (decay 0), so nothing it lights gets more than the light's own color
+    // (the flash guard relies on that); `distance` still fades it out smoothly.
+    const light = new THREE.PointLight(0xffffff, 0, TREE_LIGHT_RANGE, 0);
     light.position.set(tree.position[0], tree.position[1] + tree.height * 0.35, tree.position[2]);
     scene.add(light);
 
@@ -82,8 +87,9 @@ async function main() {
 
   const ledView = new LedView(model.leds);
   // Everything drawn reads the flash-limited copy of the effect pixels.
-  const glowGain = Math.max(...treeViews.map((view) => foliageGlowGain(view.foliage)));
-  const guard = new FlashGuard(model.pixels, model.leds, glowGain);
+  const bounds = treeViews.map((view) => foliageGlowBound(view.foliage));
+  const leafGlow = { ...bounds[0], weight: Math.max(...bounds.map((b) => b.weight)) };
+  const guard = new FlashGuard(model.pixels, model.leds, leafGlow);
   scene.add(ledView.object);
 
   // --- Effects -------------------------------------------------------------------------------

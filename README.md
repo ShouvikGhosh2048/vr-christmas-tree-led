@@ -159,14 +159,14 @@ controller. Call `ctx.clear()` or `ctx.fade()` if you want a fresh frame.
 
 What you see passes through a photosensitivity guard (`src/flash-guard.js`) modelled on WCAG
 2.3's flash rules: at most 3 flashes in any second, a flash being a pair of opposite changes of
-10% or more in luminance as drawn, or a similar swing in how red the light is (so red strobes and
-red ↔ green swaps count too).
+10% or more in luminance, or a similar swing in how red the light is (so red strobes and
+red ↔ green swaps count too). It measures each way an LED is drawn: the bulb, its glow, and
+the glow it casts on the brightest needles.
 
 The limit applies to every LED, to each quarter of each tree's height and to each whole tree,
 so plain block flashing (a whole tree, a band, top vs bottom) is caught, and one tree can't
-hide another's flashing. Glow is measured for the brightest it can look (leaf glow on the
-brightest needles), and region checks allow for 4 halos overlapping and for each tree's light,
-which follows its average. Each LED and region may
+hide another's flashing. Region checks use the region's average color and allow for 4 glows
+overlapping and for the tree's light, which follows that average. Each LED and region may
 flash at most once every 1/3 s: a change that would flash it again sooner is held back, and
 the LED (or the whole region) keeps its color until it's allowed. A single quick sparkle
 passes, but an effect that strobes too fast is slowed to 3 evenly spaced flashes a second, so

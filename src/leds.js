@@ -12,9 +12,7 @@ const HALO_PEAK = 1.3; // halo falloff at its centre; keep in sync with haloFrag
 // glow it hides) so it reads as the light source rather than a dull disk in front of a
 // brighter glow.
 const BULB_GAIN = HALO_PEAK * HALO_INTENSITY;
-// The glow's peak gain on an LED's linear value. Leaf glow and the tree lights are weighted
-// sums of the same linear values and no brighter, so the flash guard measures the glow (and
-// the bulb, via bulbColor) to cover what's seen.
+// The glow's peak gain on an LED's linear value; the flash guard measures halos with it.
 export const GLOW_GAIN = HALO_PEAK * HALO_INTENSITY;
 // Halo pushed this far behind the bulb (along the view ray) so it never draws over it.
 // A quad facing the view axis cuts through off-axis bulbs otherwise, lighting a crescent on

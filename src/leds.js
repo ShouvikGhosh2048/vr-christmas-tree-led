@@ -12,6 +12,10 @@ const HALO_PEAK = 1.3; // halo falloff at its centre; keep in sync with haloFrag
 // glow it hides) so it reads as the light source rather than a dull disk in front of a
 // brighter glow.
 const BULB_GAIN = HALO_PEAK * HALO_INTENSITY;
+// The most anything drawn amplifies an LED's linear value, or a change in it (the bulb, whose
+// soft knee is never steeper than this, and the glow's peak). The flash guard measures
+// flashes in these terms so they cover what's actually seen.
+export const DISPLAY_GAIN = BULB_GAIN;
 // Halo pushed this far behind the bulb (along the view ray) so it never draws over it.
 // A quad facing the view axis cuts through off-axis bulbs otherwise, lighting a crescent on
 // one edge. 2× the radius stays clear up to ~63° off-axis (tan θ < 2).

@@ -250,7 +250,7 @@ async function main() {
     const time = clock.elapsedTime;
 
     effects.update(time, dt);
-    guard.update(dt);
+    guard.update(elapsed); // real time, so its one-second window matches what's displayed
     ledView.update(guard.shown, effects.brightness);
 
     for (const view of treeViews) {

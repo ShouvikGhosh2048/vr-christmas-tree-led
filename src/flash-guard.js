@@ -1,4 +1,4 @@
-import { LUT } from './leds.js';
+import { DISPLAY_GAIN, LUT } from './leds.js';
 
 // Photosensitivity guard between the effects and the display. Effects are arbitrary files and
 // can strobe, so everything that is drawn (bulbs, halos, leaf glow, tree lights) reads the
@@ -28,17 +28,24 @@ const RED_STEP = 20 / 320;
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
 
+// Measures are taken on the LED's linear value times DISPLAY_GAIN, not the raw value: every
+// drawn path (bulb, glow, leaf glow, tree light) changes by at most that much for a given
+// change in the LED, so a flash anywhere on screen is at least as big in this measure. It
+// isn't capped at 1, so changes between bright values still count.
+const SEEN = LUT.map((v) => v * DISPLAY_GAIN);
+
 export class FlashGuard {
   // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex).
   constructor(pixels, leds) {
     const n = pixels.length;
     const count = n / 3;
     this.target = pixels;
-    // Shown and candidate colours in linear light. Each LED shows either the effect's colour or
-    // its previous one, so these are always exact LUT values and `shown` is exact bytes.
+    // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
+    // `state` and `next` the shown and candidate colours as seen (SEEN values).
     this.state = new Float32Array(n);
     this.next = new Float32Array(n);
     this.shown = new Uint8ClampedArray(n);
+    this.accept = new Uint8Array(count); // whether each LED takes its candidate this frame
     this.time = 0;
     this.count = count;
 
@@ -71,14 +78,16 @@ export class FlashGuard {
   }
 
   update(dt) {
-    const { target, state, next, shown, count, levels, size, sumLuma, sumRed, held } = this;
+    const { target, state, next, shown, accept, count, levels, size, sumLuma, sumRed, held } =
+      this;
     if (!count) return;
     this.time += dt;
 
     // LEDs: hold any whose candidate colour would be a reversal it has no allowance for.
     for (let led = 0, i = 0; led < count; led++, i += 3) {
-      const r = LUT[target[i]], g = LUT[target[i + 1]], b = LUT[target[i + 2]];
+      const r = SEEN[target[i]], g = SEEN[target[i + 1]], b = SEEN[target[i + 2]];
       const hold = this._blocked(led, luminance(r, g, b), redness(r, g, b));
+      accept[led] = hold ? 0 : 1;
       next[i] = hold ? state[i] : r;
       next[i + 1] = hold ? state[i + 1] : g;
       next[i + 2] = hold ? state[i + 2] : b;
@@ -97,6 +106,7 @@ export class FlashGuard {
       }
       for (let led = 0, i = 0; led < count; led++, i += 3) {
         if (held[level[led]] !== 2) continue;
+        accept[led] = 0;
         next[i] = state[i];
         next[i + 1] = state[i + 1];
         next[i + 2] = state[i + 2];
@@ -104,7 +114,12 @@ export class FlashGuard {
     }
 
     state.set(next);
-    for (let c = 0; c < state.length; c++) shown[c] = 255 * Math.pow(state[c], 1 / 2.2);
+    for (let led = 0, i = 0; led < count; led++, i += 3) {
+      if (!accept[led]) continue;
+      shown[i] = target[i];
+      shown[i + 1] = target[i + 1];
+      shown[i + 2] = target[i + 2];
+    }
 
     // Track reversals on what is shown, for every unit.
     for (let led = 0, i = 0; led < count; led++, i += 3) {

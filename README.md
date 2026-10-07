@@ -159,7 +159,7 @@ controller. Call `ctx.clear()` or `ctx.fade()` if you want a fresh frame.
 
 What you see passes through a photosensitivity guard (`src/flash-guard.js`) modelled on WCAG
 2.3's flash rules: at most 3 flashes in any second, a flash being a pair of opposite changes of
-10% or more in luminance, or a similar swing in how red the light is (so red strobes and
+10% or more in luminance as drawn, or a similar swing in how red the light is (so red strobes and
 red ↔ green swaps count too).
 
 The limit applies to every LED, to each quarter of each tree's height and to each whole tree,

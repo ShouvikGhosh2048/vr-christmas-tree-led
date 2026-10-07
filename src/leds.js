@@ -12,10 +12,10 @@ const HALO_PEAK = 1.3; // halo falloff at its centre; keep in sync with haloFrag
 // glow it hides) so it reads as the light source rather than a dull disk in front of a
 // brighter glow.
 const BULB_GAIN = HALO_PEAK * HALO_INTENSITY;
-// The most anything drawn amplifies an LED's linear value, or a change in it (the bulb, whose
-// soft knee is never steeper than this, and the glow's peak). The flash guard measures
-// flashes in these terms so they cover what's actually seen.
-export const DISPLAY_GAIN = BULB_GAIN;
+// The glow's peak gain on an LED's linear value. Leaf glow and the tree lights are weighted
+// sums of the same linear values and no brighter, so the flash guard measures the glow (and
+// the bulb, via bulbColor) to cover what's seen.
+export const GLOW_GAIN = HALO_PEAK * HALO_INTENSITY;
 // Halo pushed this far behind the bulb (along the view ray) so it never draws over it.
 // A quad facing the view axis cuts through off-axis bulbs otherwise, lighting a crescent on
 // one edge. 2× the radius stays clear up to ~63° off-axis (tan θ < 2).
@@ -125,23 +125,28 @@ export class LedView {
       halo[i] = r;
       halo[i + 1] = g;
       halo[i + 2] = b;
-      // Bulb at the glow's peak, eased so the brightest channel reaches 1 only at full value:
-      // BULB_GAIN·m / (1 + (BULB_GAIN − 1)·m). All channels share the scale, keeping the hue.
-      const m = Math.max(r, g, b);
-      const gain = BULB_GAIN / (1 + (BULB_GAIN - 1) * m);
-      const lr = r * gain, lg = g * gain, lb = b * gain;
-      // Unlit grey, topped up only to the BULB_OFF luminance floor: unlit bulbs stay
-      // visible and a fade never dips darker than an unlit bulb. Lit bulbs are their pure
-      // colour once their luminance passes BULB_OFF; dim blue and red keep a slight grey
-      // until then.
-      const off = Math.max(0, BULB_OFF - (0.2126 * lr + 0.7152 * lg + 0.0722 * lb));
-      bulb[i] = off + lr;
-      bulb[i + 1] = off + lg;
-      bulb[i + 2] = off + lb;
+      bulbColor(r, g, b, bulb, i);
     }
     this.bulbColors.needsUpdate = true;
     this.haloColors.needsUpdate = true;
   }
+}
+
+// Bulb color for a linear LED color, written to out[o..o+2]. Shared with the flash guard so it
+// measures exactly what's drawn.
+export function bulbColor(r, g, b, out, o) {
+  // At the glow's peak, eased so the brightest channel reaches 1 only at full value:
+  // BULB_GAIN·m / (1 + (BULB_GAIN − 1)·m). All channels share the scale, keeping the hue.
+  const m = Math.max(r, g, b);
+  const gain = BULB_GAIN / (1 + (BULB_GAIN - 1) * m);
+  const lr = r * gain, lg = g * gain, lb = b * gain;
+  // Unlit grey, topped up only to the BULB_OFF luminance floor: unlit bulbs stay visible and a
+  // fade never dips darker than an unlit bulb. Lit bulbs are their pure colour once their
+  // luminance passes BULB_OFF; dim blue and red keep a slight grey until then.
+  const off = Math.max(0, BULB_OFF - (0.2126 * lr + 0.7152 * lg + 0.0722 * lb));
+  out[o] = off + lr;
+  out[o + 1] = off + lg;
+  out[o + 2] = off + lb;
 }
 
 // Average linear color of a pixel range, used to tint the foliage and ground near each tree.

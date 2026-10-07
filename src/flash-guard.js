@@ -1,4 +1,4 @@
-import { DISPLAY_GAIN, LUT } from './leds.js';
+import { GLOW_GAIN, LUT, bulbColor } from './leds.js';
 
 // Photosensitivity guard between the effects and the display. Effects are arbitrary files and
 // can strobe, so everything that is drawn (bulbs, halos, leaf glow, tree lights) reads the
@@ -8,7 +8,11 @@ import { DISPLAY_GAIN, LUT } from './leds.js';
 // Modelled on WCAG 2.3's flash rules: no more than 3 flashes in any second, a flash being a
 // pair of opposite changes of 10% or more in relative luminance, or of 20/320 in linear
 // R − G − B (the "red flash" measure, which also catches red ↔ green swaps at equal
-// luminance).
+// luminance). Both are measured on what's drawn: the bulb (via the same bulbColor the renderer
+// uses) and the glow's peak (GLOW_GAIN × the LED's linear value, uncapped so changes between
+// bright values still count; leaf glow and tree lights are no brighter). That's four measures
+// per LED, each tracked separately. Measured at full brightness; the brightness control is
+// applied after this.
 //
 // The rule is applied to each LED and to the average of each REGION_BANDS-th of each tree's
 // height and of each whole tree, so plain block flashing (a tree, a band, top vs bottom) is
@@ -21,33 +25,28 @@ import { DISPLAY_GAIN, LUT } from './leds.js';
 // at most MAX_FLASHES of each kind in any second, while a single quick flash (a sparkle: up
 // then straight back down) passes. A change that would come too soon is held back: the LED, or
 // every LED in the region, keeps its colour until it's allowed. Other changes pass untouched,
-// so effects that stay under the limit look exactly as written. The brightness control is
-// applied after this.
+// so effects that stay under the limit look exactly as written.
 const LUMA_STEP = 0.1;
 const RED_STEP = 20 / 320;
+const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP]; // glow luma, glow red, bulb luma, red
+const M = STEPS.length;
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
-
-// Measures are taken on the LED's linear value times DISPLAY_GAIN, not the raw value: every
-// drawn path (bulb, glow, leaf glow, tree light) changes by at most that much for a given
-// change in the LED, so a flash anywhere on screen is at least as big in this measure. It
-// isn't capped at 1, so changes between bright values still count.
-const SEEN = LUT.map((v) => v * DISPLAY_GAIN);
 
 export class FlashGuard {
   // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex).
   constructor(pixels, leds) {
-    const n = pixels.length;
-    const count = n / 3;
+    const count = pixels.length / 3;
     this.target = pixels;
-    // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
-    // `state` and `next` the shown and candidate colours as seen (SEEN values).
-    this.state = new Float32Array(n);
-    this.next = new Float32Array(n);
-    this.shown = new Uint8ClampedArray(n);
-    this.accept = new Uint8Array(count); // whether each LED takes its candidate this frame
-    this.time = 0;
     this.count = count;
+    this.time = 0;
+    // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
+    // `state` and `next` the measures of the shown and candidate colours (M per LED).
+    this.shown = new Uint8ClampedArray(pixels.length);
+    this.state = new Float32Array(count * M);
+    this.next = new Float32Array(count * M);
+    this.accept = new Uint8Array(count); // whether each LED takes its candidate this frame
+    this.bulb = new Float32Array(3);
 
     // Units are the LEDs (0..count-1), then the height bands, then the trees. `levels[k]` maps
     // each LED to its unit at that level.
@@ -63,12 +62,10 @@ export class FlashGuard {
     const units = count + trees * (REGION_BANDS + 1);
     this.size = new Float32Array(units); // LEDs per region unit
     for (const level of this.levels) for (let i = 0; i < count; i++) this.size[level[i]]++;
-    this.sumLuma = new Float32Array(units);
-    this.sumRed = new Float32Array(units);
+    this.sums = new Float32Array(units * M);
+    this.avg = new Float32Array(M);
     this.held = new Uint8Array(units);
-
-    this.luma = new Tracker(units, LUMA_STEP);
-    this.red = new Tracker(units, RED_STEP);
+    this.trackers = STEPS.map((step) => new Tracker(units, step));
   }
 
   // The guarded counterpart of a subarray of the effect buffer (e.g. one tree's pixels).
@@ -78,19 +75,16 @@ export class FlashGuard {
   }
 
   update(dt) {
-    const { target, state, next, shown, accept, count, levels, size, sumLuma, sumRed, held } =
-      this;
+    const { target, shown, state, next, accept, count, levels, held } = this;
     if (!count) return;
     this.time += dt;
 
     // LEDs: hold any whose candidate colour would be a reversal it has no allowance for.
-    for (let led = 0, i = 0; led < count; led++, i += 3) {
-      const r = SEEN[target[i]], g = SEEN[target[i + 1]], b = SEEN[target[i + 2]];
-      const hold = this._blocked(led, luminance(r, g, b), redness(r, g, b));
+    for (let led = 0; led < count; led++) {
+      this._measure(target, led, next);
+      const hold = this._blocked(led, next, led * M);
       accept[led] = hold ? 0 : 1;
-      next[i] = hold ? state[i] : r;
-      next[i + 1] = hold ? state[i + 1] : g;
-      next[i + 2] = hold ? state[i + 2] : b;
+      if (hold) for (let k = 0; k < M; k++) next[led * M + k] = state[led * M + k];
     }
 
     // Regions, finest first: hold every LED of a region whose candidate average would be a
@@ -102,14 +96,12 @@ export class FlashGuard {
       for (let i = 0; i < count; i++) {
         const u = level[i];
         if (held[u]) continue;
-        held[u] = this._blocked(u, sumLuma[u] / size[u], sumRed[u] / size[u]) ? 2 : 1;
+        held[u] = this._blocked(u, this._regionAvg(u), 0) ? 2 : 1;
       }
-      for (let led = 0, i = 0; led < count; led++, i += 3) {
+      for (let led = 0; led < count; led++) {
         if (held[level[led]] !== 2) continue;
         accept[led] = 0;
-        next[i] = state[i];
-        next[i + 1] = state[i + 1];
-        next[i + 2] = state[i + 2];
+        for (let k = 0; k < M; k++) next[led * M + k] = state[led * M + k];
       }
     }
 
@@ -122,10 +114,7 @@ export class FlashGuard {
     }
 
     // Track reversals on what is shown, for every unit.
-    for (let led = 0, i = 0; led < count; led++, i += 3) {
-      const r = state[i], g = state[i + 1], b = state[i + 2];
-      this._track(led, luminance(r, g, b), redness(r, g, b));
-    }
+    for (let led = 0; led < count; led++) this._track(led, state, led * M);
     for (const level of levels) {
       this._sum(state, level);
       held.fill(0);
@@ -133,30 +122,46 @@ export class FlashGuard {
         const u = level[i];
         if (held[u]) continue;
         held[u] = 1;
-        this._track(u, sumLuma[u] / size[u], sumRed[u] / size[u]);
+        this._track(u, this._regionAvg(u), 0);
       }
     }
   }
 
-  // Whether moving unit u to these values would reverse a measure too soon.
-  _blocked(u, l, red) {
-    return this.luma.blocked(u, l, this.time) || this.red.blocked(u, red, this.time);
+  // The M measures of an LED's colour in `pixels`, written to out[led * M ...].
+  _measure(pixels, led, out) {
+    const i = led * 3, o = led * M, bulb = this.bulb;
+    const r = LUT[pixels[i]], g = LUT[pixels[i + 1]], b = LUT[pixels[i + 2]];
+    bulbColor(r, g, b, bulb, 0);
+    out[o] = GLOW_GAIN * luminance(r, g, b);
+    out[o + 1] = GLOW_GAIN * redness(r, g, b);
+    out[o + 2] = luminance(bulb[0], bulb[1], bulb[2]);
+    out[o + 3] = redness(bulb[0], bulb[1], bulb[2]);
   }
 
-  _track(u, l, red) {
-    this.luma.track(u, l, this.time);
-    this.red.track(u, red, this.time);
+  // Whether moving unit u to the measures in v[o..o+M) would reverse one too soon.
+  _blocked(u, v, o) {
+    for (let k = 0; k < M; k++) if (this.trackers[k].blocked(u, v[o + k], this.time)) return true;
+    return false;
   }
 
-  // Per-region sums of luminance and redness of a frame, for one level.
+  _track(u, v, o) {
+    for (let k = 0; k < M; k++) this.trackers[k].track(u, v[o + k], this.time);
+  }
+
+  // Per-region sums of each measure over a frame's per-LED measures, for one level.
   _sum(frame, level) {
-    const { sumLuma, sumRed, count } = this;
-    for (let i = 0; i < count; i++) sumLuma[level[i]] = sumRed[level[i]] = 0;
-    for (let led = 0, i = 0; led < count; led++, i += 3) {
-      const r = frame[i], g = frame[i + 1], b = frame[i + 2];
-      sumLuma[level[led]] += luminance(r, g, b);
-      sumRed[level[led]] += redness(r, g, b);
+    const { sums, count } = this;
+    for (let i = 0; i < count; i++) sums.fill(0, level[i] * M, level[i] * M + M);
+    for (let led = 0; led < count; led++) {
+      const s = level[led] * M;
+      for (let k = 0; k < M; k++) sums[s + k] += frame[led * M + k];
     }
+  }
+
+  // Region u's average measures (from the last _sum), in this.avg.
+  _regionAvg(u) {
+    for (let k = 0; k < M; k++) this.avg[k] = this.sums[u * M + k] / this.size[u];
+    return this.avg;
   }
 }
 

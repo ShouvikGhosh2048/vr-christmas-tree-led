@@ -112,7 +112,11 @@ export default {
 ```
 
 Each tree runs its own instance of an effect. Keep per-tree data in `ctx.state`, not in
-module-level variables, because two trees may run the same module at once. If an effect throws,
+module-level variables, because two trees may run the same module at once.
+
+Effects can `import` shared helper files (e.g. `./palette.js`), but **Reload effects** only
+refreshes the effect files themselves. Browsers cache every other module for the lifetime of
+the page, so after editing a shared helper, refresh the page. If an effect throws,
 only its tree turns dim red and shows the error. Everything else keeps running.
 
 ### `ctx`

@@ -241,7 +241,9 @@ async function main() {
   let fpsTime = 0;
 
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
+    // Cap the step animations take after a stall, but measure FPS from the real elapsed time.
+    const elapsed = clock.getDelta();
+    const dt = Math.min(elapsed, 0.1);
     const time = clock.elapsedTime;
 
     effects.update(time, dt);
@@ -265,7 +267,7 @@ async function main() {
     }
 
     fpsFrames++;
-    fpsTime += dt;
+    fpsTime += elapsed;
     if (fpsTime >= 0.5) {
       const fps = fpsFrames / fpsTime;
       desktopUI.setFps(fps);

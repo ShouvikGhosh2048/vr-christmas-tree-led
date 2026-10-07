@@ -46,6 +46,7 @@ export class FlashGuard {
     this.target = pixels;
     this.count = count;
     this.time = 0;
+    this.started = false; // whether a frame has been shown yet
     // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
     // `state` and `next` the measures of the shown and candidate colours (M per LED).
     this.shown = new Uint8ClampedArray(pixels.length);
@@ -119,8 +120,11 @@ export class FlashGuard {
       shown[i + 2] = target[i + 2];
     }
 
-    // Track reversals on what is shown, for every unit.
-    for (let led = 0; led < count; led++) this._track(led, state, led * M);
+    // Track reversals on what is shown, for every unit. The first frame only sets the starting
+    // values: nothing was shown before it, so it isn't a change.
+    const track = this.started ? '_track' : '_seed';
+    this.started = true;
+    for (let led = 0; led < count; led++) this[track](led, state, led * M);
     for (const level of levels) {
       this._sum(state, level);
       held.fill(0);
@@ -128,7 +132,7 @@ export class FlashGuard {
         const u = level[i];
         if (held[u]) continue;
         held[u] = 1;
-        this._track(u, this._regionAvg(u), 0);
+        this[track](u, this._regionAvg(u), 0);
       }
     }
   }
@@ -152,6 +156,10 @@ export class FlashGuard {
 
   _track(u, v, o) {
     for (let k = 0; k < M; k++) this.trackers[k].track(u, v[o + k], this.time);
+  }
+
+  _seed(u, v, o) {
+    for (let k = 0; k < M; k++) this.trackers[k].extreme[u] = v[o + k];
   }
 
   // Per-region sums of each measure over a frame's per-LED measures, for one level.

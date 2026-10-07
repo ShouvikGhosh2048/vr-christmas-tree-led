@@ -164,10 +164,12 @@ red ↔ green swaps count too).
 
 The limit applies to every LED, to each quarter of each tree's height and to each whole tree,
 so plain block flashing (a whole tree, a band, top vs bottom) is caught, and one tree can't
-hide another's flashing. Each of these may flash at most once every 1/3 s: a change that would
-flash it again sooner is held back, and the LED (or the whole region) keeps its color until
-it's allowed. A single quick sparkle passes, but an effect that strobes too fast is slowed to
-3 evenly spaced flashes a second, so it will look like it stutters.
+hide another's flashing. Region checks are 4× stricter than per-LED ones, because many LEDs'
+glows overlap and add up, and each tree's light follows its average. Each LED and region may
+flash at most once every 1/3 s: a change that would flash it again sooner is held back, and
+the LED (or the whole region) keeps its color until it's allowed. A single quick sparkle
+passes, but an effect that strobes too fast is slowed to 3 evenly spaced flashes a second, so
+it will look like it stutters.
 
 Effects that stay under the limit look exactly as written. The bundled ones at their default
 settings are essentially untouched; Twinkle's random sparkles very occasionally land too close
@@ -175,7 +177,8 @@ together on one LED, and the later one is held back.
 
 It's a mitigation, not a guarantee. Not covered: patterns that balance one part of a region
 against another (e.g. front vs back of a tree, or groups of LEDs taking turns), fine moving
-stripes, and the brightness control, which is applied after the guard. The guard also only
+stripes, a whole tree seen from far away (where more glows overlap than the 4× allows for),
+and the brightness control, which is applied after the guard. The guard also only
 changes what's drawn: `strip.pixels` and `led.get()` still hold the effect's own values, so
 anything that streams them to real LEDs gets no flash limiting.
 

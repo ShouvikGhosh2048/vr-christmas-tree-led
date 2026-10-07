@@ -32,6 +32,12 @@ const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP]; // glow luma, glow red
 const M = STEPS.length;
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
+// Region averages are scaled up by this before checking. Many LEDs light the same spots: their
+// glows overlap and add up on screen, and each tree's point light shines at 4× the tree's
+// average linear luminance (main.js), so a small change shared by a whole region can look
+// bigger than any one LED's measures suggest. 4 covers the tree light and a few overlapping
+// glows; denser overlap (a whole tree seen from far away) can still add up to more.
+const REGION_GAIN = 4;
 
 export class FlashGuard {
   // `pixels` is the shared effect buffer; `leds` are the model's LEDs (tree, h, globalIndex).
@@ -160,7 +166,7 @@ export class FlashGuard {
 
   // Region u's average measures (from the last _sum), in this.avg.
   _regionAvg(u) {
-    for (let k = 0; k < M; k++) this.avg[k] = this.sums[u * M + k] / this.size[u];
+    for (let k = 0; k < M; k++) this.avg[k] = (this.sums[u * M + k] / this.size[u]) * REGION_GAIN;
     return this.avg;
   }
 }

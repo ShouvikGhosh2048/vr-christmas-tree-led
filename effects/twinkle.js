@@ -1,7 +1,7 @@
 // Random sparkles that fade out. A classic 1D strip effect: it only looks at the pixel buffer,
 // and relies on the buffer persisting between frames (like FastLED/WLED).
 
-const WARM_WHITE = [255, 170, 80];
+const WARM_WHITE = [255, 197, 143]; // FastLED's Tungsten40W color temperature
 const CLASSIC = [
   [255, 0, 0],
   [0, 200, 0],

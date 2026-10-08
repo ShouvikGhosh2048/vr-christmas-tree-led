@@ -11,11 +11,15 @@ import {
 } from './tree.js';
 import { LedView, averageColor, createWire } from './leds.js';
 import { EffectManager } from './effects.js';
+import { FlashGuard, TREE_LIGHT_GAIN } from './flash-guard.js';
+
 import { createEnvironment } from './environment.js';
 import { createLabel } from './label.js';
 import { Locomotion } from './locomotion.js';
 import { VRPanel } from './vrpanel.js';
 import { createDesktopUI } from './desktop-ui.js';
+
+const TREE_LIGHT_RANGE = 3.5; // meters; each tree's light fades out by this distance
 
 // Per-viewer preferences remembered in this browser (may be unavailable, e.g. private mode).
 function loadSetting(key, fallback) {
@@ -68,7 +72,9 @@ async function main() {
     scene.add(group);
     for (const strip of tree.strips) scene.add(createWire(strip));
 
-    const light = new THREE.PointLight(0xffffff, 0, 5, 2);
+    // No distance falloff (decay 0), so nothing it lights gets more than the light's own color
+    // (the flash guard relies on that); `distance` still fades it out smoothly.
+    const light = new THREE.PointLight(0xffffff, 0, TREE_LIGHT_RANGE, 0);
     light.position.set(tree.position[0], tree.position[1] + tree.height * 0.35, tree.position[2]);
     scene.add(light);
 
@@ -79,6 +85,8 @@ async function main() {
   });
 
   const ledView = new LedView(model.leds);
+  // Everything drawn reads the flash-limited copy of the effect pixels.
+  const guard = new FlashGuard(model.pixels, model.leds, treeViews.map((view) => view.foliage));
   scene.add(ledView.object);
 
   // --- Effects -------------------------------------------------------------------------------
@@ -247,15 +255,18 @@ async function main() {
     const time = clock.elapsedTime;
 
     effects.update(time, dt);
-    ledView.update(model.pixels, effects.brightness);
+    guard.leafGlow = app.leafGlow; // leaf glow only limits changes while it's drawn
+    guard.update(elapsed); // real time, so its one-second window matches what's displayed
+    ledView.update(guard.shown, effects.brightness);
 
     for (const view of treeViews) {
-      averageColor(view.tree.pixels, view.avg).multiplyScalar(effects.brightness);
-      if (app.leafGlow) updateFoliageGlow(view.foliage, model.pixels, effects.brightness);
-      const lum = view.avg.r * 0.3 + view.avg.g * 0.55 + view.avg.b * 0.15;
-      const c = view.light.color.copy(view.avg).multiplyScalar(1 / Math.max(lum, 1e-3));
-      c.setRGB(Math.min(c.r, 1), Math.min(c.g, 1), Math.min(c.b, 1));
-      view.light.intensity = lum * 4;
+      averageColor(guard.view(view.tree.pixels), view.avg).multiplyScalar(effects.brightness);
+      if (app.leafGlow) updateFoliageGlow(view.foliage, guard.shown, effects.brightness);
+      // The light emits exactly TREE_LIGHT_GAIN × the average color (color scaled to a max
+      // channel of 1, intensity carrying the rest), so the flash guard's tree check bounds it.
+      const peak = Math.max(view.avg.r, view.avg.g, view.avg.b, 1e-6);
+      view.light.color.copy(view.avg).multiplyScalar(1 / peak);
+      view.light.intensity = peak * TREE_LIGHT_GAIN;
     }
 
     env.update(dt);

@@ -5,6 +5,10 @@ Christmas trees wrapped in LED strips, running effects you write as plain JavaSc
 Works in a desktop browser and in VR on Meta Quest (WebXR). No build step: it's static files
 served by GitHub Pages, with Three.js loaded from a CDN.
 
+**Photosensitivity:** the scene shows animated, flashing lights. The display reduces flashing
+(see [Flash limiting](#flash-limiting)), but that's a mitigation, not a guarantee. If flashing
+lights affect you, take care.
+
 ## Running it
 
 **Locally:**
@@ -151,6 +155,34 @@ only its tree turns dim red and shows the error. Everything else keeps running.
 The pixel buffer is persistent: colors stay until you change them, the same as on a FastLED/WLED
 controller. Call `ctx.clear()` or `ctx.fade()` if you want a fresh frame.
 
+### Flash limiting
+
+What you see passes through a photosensitivity guard (`src/flash-guard.js`) modelled on WCAG
+2.3's flash rule: nothing flashes more than 3 times in any second, a flash being a pair of
+opposite changes of 10% or more in luminance, or a similar swing in how red the light is (so
+red strobes and red ↔ green swaps count too). Both kinds count towards the same limit.
+
+The limit applies to each thing that's drawn, measured as it's drawn: each LED's bulb and its
+glow, the glow cast on each cluster of needles, and each quarter of each tree's height and
+each whole tree (allowing for a couple of glows overlapping, and for the tree's light, which
+follows its average color). So plain block flashing (a whole tree, a band, top vs bottom) is
+caught, and one tree can't hide another's flashing. Each may flash at most once every 0.4 s:
+a change that would flash it again sooner is held back, and the LED (or the whole needle
+cluster or region) keeps its color until it's allowed. A single quick sparkle passes, but an
+effect that strobes too fast is slowed to evenly spaced flashes, so it will look like it
+stutters.
+
+Effects that stay under the limit look exactly as written. The bundled ones at their default
+settings are essentially untouched; Twinkle's random sparkles very occasionally land too close
+together on one LED, and the later one is held back.
+
+It's a mitigation, not a guarantee. Not covered: patterns that balance one part of a region
+against another (e.g. front vs back of a tree, or groups of LEDs taking turns), fine moving
+stripes, a tree seen from far away (where more glows overlap than allowed for), and the
+brightness control, which is applied after the guard. The guard also only changes what's
+drawn: `strip.pixels` and `led.get()` still hold the effect's own values, so anything that
+streams them to real LEDs gets no flash limiting.
+
 ### Hardware compatibility
 
 Colors are 8-bit RGB in one flat buffer per strip (`strip.pixels`, a `Uint8ClampedArray` of
@@ -170,6 +202,7 @@ src/
   strip.js            helix + arc-length resampling
   tree.js             procedural fir, strip draping, LED glow on needles
   leds.js             instanced bulbs + glow halos
+  flash-guard.js      photosensitivity limit on what's displayed
   effects.js          effect loader/runner, ctx
   color.js            color + noise helpers
   locomotion.js       VR movement, turning, teleport, buttons

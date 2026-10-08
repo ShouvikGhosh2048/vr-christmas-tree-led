@@ -14,8 +14,27 @@ const WHORL_SPACING = 0.1;
 const FROND_LENGTH = 0.26;
 const FROND_WIDTH = 0.17;
 const GLOW_RADIUS = 0.4; // how far an LED's light reaches into the needles
-const GLOW_LEDS = 4; // nearest LEDs that light each needle spray
+export const GLOW_LEDS = 4; // nearest LEDs that light each needle spray
 const QUAD_ROLLS = [0, 1.15]; // each spray is two crossed quads, for volume from any angle
+const NEEDLE_GREENS = ['#1d4a28', '#24562f', '#2d6236', '#356d3c', '#3f7a45', '#4a8a4c'];
+const NEEDLE_STEM = '#4a3418';
+// Per-spray tint range (see createTreeMesh): channel multipliers times a shade of 0.405-1.
+const NEEDLE_TINT_MIN = [0.405 * 0.8 * 0.9, 0.405 * 0.8, 0.405 * 0.8 * 0.85];
+const NEEDLE_TINT_MAX = [1.15 * 1.1, 1.15, 1.15 * 1.05];
+// LED glow on needles is ledGlow × (needle color × GLOW_TINT + GLOW_BASE).
+const GLOW_TINT = 6;
+const GLOW_BASE = 0.12;
+// The range of how strongly a needle amplifies the glow it receives, per channel: texture
+// color (needles or stem) × tint, through the formula above. Bounds leaf glow for the flash
+// guard.
+const needleChannel = (c, pick) =>
+  pick(...[...NEEDLE_GREENS, NEEDLE_STEM].map((hex) => new THREE.Color(hex).toArray()[c]));
+export const NEEDLE_GLOW_RESPONSE = [0, 1, 2].map(
+  (c) => needleChannel(c, Math.max) * NEEDLE_TINT_MAX[c] * GLOW_TINT + GLOW_BASE,
+);
+export const NEEDLE_GLOW_RESPONSE_MIN = [0, 1, 2].map(
+  (c) => needleChannel(c, Math.min) * NEEDLE_TINT_MIN[c] * GLOW_TINT + GLOW_BASE,
+);
 
 const UP = new THREE.Vector3(0, 1, 0);
 const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x3a2716 });
@@ -42,7 +61,6 @@ function getFrondTexture() {
   canvas.height = 256;
   const g = canvas.getContext('2d');
   const rand = mulberry32(42);
-  const greens = ['#1d4a28', '#24562f', '#2d6236', '#356d3c', '#3f7a45', '#4a8a4c'];
   g.lineCap = 'round';
 
   const needles = 80;
@@ -52,7 +70,7 @@ function getFrondTexture() {
     const len = 54 * (1 - 0.6 * t) * (0.8 + rand() * 0.35);
     for (const side of [-1, 1]) {
       const a = 0.9 + (rand() - 0.5) * 0.35; // angle from the stem
-      g.strokeStyle = greens[Math.floor(rand() * greens.length)];
+      g.strokeStyle = NEEDLE_GREENS[Math.floor(rand() * NEEDLE_GREENS.length)];
       g.lineWidth = 2.2 + rand() * 1.2;
       g.beginPath();
       g.moveTo(64, y);
@@ -90,7 +108,8 @@ function createFrondMaterial() {
       .replace('#include <common>', '#include <common>\nvarying vec3 vLedGlow;')
       .replace(
         '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLedGlow * (diffuseColor.rgb * 6.0 + 0.12);',
+        '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLedGlow * ' +
+          `(diffuseColor.rgb * ${GLOW_TINT.toFixed(1)} + ${GLOW_BASE});`,
       );
   };
   material.customProgramCacheKey = () => 'led-frond';

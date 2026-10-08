@@ -158,19 +158,19 @@ controller. Call `ctx.clear()` or `ctx.fade()` if you want a fresh frame.
 ### Flash limiting
 
 What you see passes through a photosensitivity guard (`src/flash-guard.js`) modelled on WCAG
-2.3's flash rules: at most 3 flashes in any second, a flash being a pair of opposite changes of
-10% or more in luminance, or a similar swing in how red the light is (so red strobes and
-red ↔ green swaps count too). It measures each way an LED is drawn: the bulb, its glow, and
-the glow it casts on the brightest needles.
+2.3's flash rule: nothing flashes more than 3 times in any second, a flash being a pair of
+opposite changes of 10% or more in luminance, or a similar swing in how red the light is (so
+red strobes and red ↔ green swaps count too). Both kinds count towards the same limit.
 
-The limit applies to every LED, to each quarter of each tree's height and to each whole tree,
-so plain block flashing (a whole tree, a band, top vs bottom) is caught, and one tree can't
-hide another's flashing. Region checks use the region's average color and allow for 4 glows
-overlapping and for the tree's light, which follows that average. Each LED and region may
-flash at most once every 1/3 s: a change that would flash it again sooner is held back, and
-the LED (or the whole region) keeps its color until it's allowed. A single quick sparkle
-passes, but an effect that strobes too fast is slowed to 3 evenly spaced flashes a second, so
-it will look like it stutters.
+The limit applies to each thing that's drawn, measured as it's drawn: each LED's bulb and its
+glow, the glow cast on each cluster of needles, and each quarter of each tree's height and
+each whole tree (allowing for a couple of glows overlapping, and for the tree's light, which
+follows its average color). So plain block flashing (a whole tree, a band, top vs bottom) is
+caught, and one tree can't hide another's flashing. Each may flash at most once every 0.4 s:
+a change that would flash it again sooner is held back, and the LED (or the whole needle
+cluster or region) keeps its color until it's allowed. A single quick sparkle passes, but an
+effect that strobes too fast is slowed to evenly spaced flashes, so it will look like it
+stutters.
 
 Effects that stay under the limit look exactly as written. The bundled ones at their default
 settings are essentially untouched; Twinkle's random sparkles very occasionally land too close
@@ -178,10 +178,10 @@ together on one LED, and the later one is held back.
 
 It's a mitigation, not a guarantee. Not covered: patterns that balance one part of a region
 against another (e.g. front vs back of a tree, or groups of LEDs taking turns), fine moving
-stripes, a whole tree seen from far away (where more glows overlap than the 4× allows for),
-and the brightness control, which is applied after the guard. The guard also only
-changes what's drawn: `strip.pixels` and `led.get()` still hold the effect's own values, so
-anything that streams them to real LEDs gets no flash limiting.
+stripes, a tree seen from far away (where more glows overlap than allowed for), and the
+brightness control, which is applied after the guard. The guard also only changes what's
+drawn: `strip.pixels` and `led.get()` still hold the effect's own values, so anything that
+streams them to real LEDs gets no flash limiting.
 
 ### Hardware compatibility
 

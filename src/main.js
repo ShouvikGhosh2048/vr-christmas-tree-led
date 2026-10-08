@@ -8,7 +8,6 @@ import {
   bindFoliageToLeds,
   updateFoliageGlow,
   clearFoliageGlow,
-  foliageGlowBound,
 } from './tree.js';
 import { LedView, averageColor, createWire } from './leds.js';
 import { EffectManager } from './effects.js';
@@ -87,9 +86,7 @@ async function main() {
 
   const ledView = new LedView(model.leds);
   // Everything drawn reads the flash-limited copy of the effect pixels.
-  const bounds = treeViews.map((view) => foliageGlowBound(view.foliage));
-  const leafGlow = { ...bounds[0], weight: Math.max(...bounds.map((b) => b.weight)) };
-  const guard = new FlashGuard(model.pixels, model.leds, leafGlow);
+  const guard = new FlashGuard(model.pixels, model.leds, treeViews.map((view) => view.foliage));
   scene.add(ledView.object);
 
   // --- Effects -------------------------------------------------------------------------------

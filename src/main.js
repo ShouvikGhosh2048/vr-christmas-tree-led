@@ -258,6 +258,7 @@ async function main() {
     const time = clock.elapsedTime;
 
     effects.update(time, dt);
+    guard.leafGlow = app.leafGlow; // leaf glow only limits changes while it's drawn
     guard.update(elapsed); // real time, so its one-second window matches what's displayed
     ledView.update(guard.shown, effects.brightness);
 

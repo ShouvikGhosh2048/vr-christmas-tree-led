@@ -37,6 +37,7 @@ const RED_STEP = 20 / 320;
 // Tracked measures: halo luminance and redness, bulb ditto, leaf glow ditto.
 const STEPS = [LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP, LUMA_STEP, RED_STEP];
 const T = STEPS.length;
+const LEAF = 4; // index of the first leaf glow measure
 const M = T + 3; // per LED: the tracked measures, then its linear RGB (for region averages)
 const MAX_FLASHES = 3;
 const REGION_BANDS = 4;
@@ -53,6 +54,9 @@ export class FlashGuard {
     this.count = count;
     this.time = 0;
     this.started = false; // whether a frame has been shown yet
+    // Whether leaf glow is drawn. Its measures are always tracked, but only hold changes back
+    // while it's on.
+    this.leafGlow = true;
     this.leafResponse = leafGlow.response.map((v) => v * leafGlow.weight);
     // Each LED shows either the effect's colour or its previous one. `shown` holds those bytes;
     // `state` and `next` the measures of the shown and candidate colours (M per LED).
@@ -162,7 +166,8 @@ export class FlashGuard {
 
   // Whether moving unit u to the measures in v[o..o+T) would reverse one too soon.
   _blocked(u, v, o) {
-    for (let k = 0; k < T; k++) if (this.trackers[k].blocked(u, v[o + k], this.time)) return true;
+    const n = this.leafGlow ? T : LEAF;
+    for (let k = 0; k < n; k++) if (this.trackers[k].blocked(u, v[o + k], this.time)) return true;
     return false;
   }
 

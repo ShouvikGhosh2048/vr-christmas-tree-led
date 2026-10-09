@@ -15,7 +15,7 @@ const FROND_LENGTH = 0.26;
 const FROND_WIDTH = 0.17;
 const GLOW_RADIUS = 0.4; // how far an LED's light reaches into the needles
 export const GLOW_LEDS = 4; // nearest LEDs that light each needle spray
-const QUAD_ROLLS = [0, 1.15]; // each spray is two crossed quads, for volume from any angle
+const QUAD_ROLLS = [0]; // one quad per spray; add a second roll (e.g. 1.15) to cross them for more volume
 const NEEDLE_GREENS = ['#1d4a28', '#24562f', '#2d6236', '#356d3c', '#3f7a45', '#4a8a4c'];
 const NEEDLE_STEM = '#4a3418';
 // Per-spray tint range (see createTreeMesh): channel multipliers times a shade of 0.405-1.
@@ -199,7 +199,7 @@ export function createTreeMesh(tree) {
         along.normalize();
         addFrond(center, along, (rand() - 0.5) * 0.9, size, shade);
 
-        if (k < steps && rand() < 0.85) {
+        if (k < steps && rand() < 0.5) {
           for (const sgn of [-1, 1]) {
             const sideDir = dir.clone().applyAxisAngle(UP, sgn * (0.6 + rand() * 0.35));
             sideDir.y += (rand() - 0.7) * 0.6;

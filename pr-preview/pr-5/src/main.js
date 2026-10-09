@@ -50,6 +50,11 @@ async function main() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   renderer.xr.setReferenceSpaceType('local-floor');
+  // Fill rate is the main VR cost (foliage, halos, per-tree lights): render a bit below the
+  // headset's native resolution and let the compositor drop detail at the edges. Both must be
+  // set before the session starts.
+  renderer.xr.setFramebufferScaleFactor(0.8);
+  renderer.xr.setFoveation(1);
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();

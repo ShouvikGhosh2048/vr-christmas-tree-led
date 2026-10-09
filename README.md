@@ -32,8 +32,13 @@ origin, so WebXR works without HTTPS. Without a headset, the
 [Immersive Web Emulator](https://chromewebstore.google.com/detail/immersive-web-emulator/cgffilbpcibhmcfbgggfhfolhkfbhmik)
 Chrome extension lets you test VR controls.
 
-**GitHub Pages:** repo Settings → Pages → Source: *Deploy from a branch* → `main` / `(root)`.
-The site appears at `https://<user>.github.io/vr-christmas-tree-led/`. Push to update.
+**GitHub Pages:** repo Settings → Pages → Source: *Deploy from a branch* → `gh-pages` / `(root)`.
+The site appears at `https://<user>.github.io/vr-christmas-tree-led/`. Pushes to `main` redeploy it
+(`.github/workflows/deploy.yml`).
+
+**PR previews:** each pull request (from a branch in this repo) gets a preview at
+`https://<user>.github.io/vr-christmas-tree-led/pr-preview/pr-<number>/`, linked in a PR comment
+and removed when the PR closes (`.github/workflows/preview.yml`).
 
 ## VR controls (Quest Touch controllers)
 

@@ -215,3 +215,5 @@ src/
   desktop-ui.js       desktop control panel
   environment.js      sky, snow, ground, lights
 ```
+
+<!-- preview test -->

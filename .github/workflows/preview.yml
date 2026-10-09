@@ -1,0 +1,28 @@
+name: PR preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write       # push to the gh-pages branch
+  pull-requests: write  # comment the preview link on the PR
+
+jobs:
+  preview:
+    # Fork PRs get a read-only token, so they can't deploy (and shouldn't).
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Site is static (no build step), so deploy the repo as-is.
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: .
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: auto
